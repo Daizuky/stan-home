@@ -319,6 +319,55 @@
   .lock-btn:hover{background:#1e3550;}
   .lock-error{color:#ff4d6d;font-size:11.5px;min-height:16px;}
 
+  /* ── CANDIDATURES ── */
+  .cd-add{
+    background:#111116;border:1px solid #1e1e28;border-radius:14px;padding:18px 20px;margin-bottom:22px;
+    display:grid;grid-template-columns:1fr 1fr;gap:10px;
+  }
+  .cd-add input, .cd-add select, .cd-add textarea{
+    background:#0c0c0f;border:1px solid #2a2a3a;color:#eee;font-family:'DM Mono',monospace;
+    font-size:12px;padding:8px 10px;border-radius:7px;
+  }
+  .cd-add textarea{grid-column:1/-1;min-height:50px;resize:vertical;}
+  .cd-add-btn{
+    grid-column:1/-1;background:#1a2a3e;border:1px solid #4a9eff55;color:#4a9eff;
+    font-family:'DM Mono',monospace;font-size:12.5px;padding:10px;border-radius:8px;cursor:pointer;
+  }
+  .cd-add-btn:hover{background:#1e3550;}
+
+  .cd-list{display:flex;flex-direction:column;gap:10px;}
+  .cd-card{
+    background:#111116;border:1px solid #1e1e28;border-radius:12px;padding:14px 18px;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;
+  }
+  .cd-card.overdue{border-color:#ff4d6d88;background:#1a1010;}
+  .cd-main{flex:1;min-width:200px;}
+  .cd-company{font-size:14.5px;font-weight:500;color:#eee;}
+  .cd-contact{font-size:11px;color:#666;margin-top:2px;}
+  .cd-notes{font-size:11px;color:#888;margin-top:6px;font-style:italic;}
+  .cd-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+  .cd-status{
+    font-size:10px;padding:4px 10px;border-radius:20px;letter-spacing:.03em;text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .cd-dates{font-size:10.5px;color:#666;text-align:right;}
+  .cd-dates.overdue-text{color:#ff4d6d;font-weight:500;}
+  .cd-del{background:none;border:none;color:#333;font-size:14px;cursor:pointer;}
+  .cd-del:hover{color:#e55;}
+
+  .cd-filiere-badge{
+    display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.05em;
+    padding:2px 8px;border-radius:5px;margin-top:4px;
+  }
+  .cd-filters{display:flex;gap:8px;margin-bottom:16px;}
+  .cd-filter-btn{
+    background:#16161d;border:1px solid #26263a;color:#888;font-family:'DM Mono',monospace;
+    font-size:11.5px;padding:7px 14px;border-radius:8px;cursor:pointer;
+  }
+  .cd-filter-btn.active-sisr{background:#0d2e16;border-color:#4ade80;color:#4ade80;}
+  .cd-filter-btn.active-slam{background:#0d1a2e;border-color:#4a9eff;color:#4a9eff;}
+  .cd-filter-btn.active-all{background:#232336;border-color:#4a4a70;color:#fff;}
+
   .lr-sections{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding-top:2vh;}
   .lr-tile{
     width:170px;height:170px;border-radius:26px;background:#111116;border:1px solid #1e1e28;
@@ -438,6 +487,7 @@ function render(){
   else if(view === "routine") renderRoutineView();
   else if(view === "learning") renderLearning();
   else if(view === "learning-section") renderLearningSection();
+  else if(view === "candidatures") renderCandidatures();
 }
 
 function topbar(title, backTo){
@@ -466,12 +516,14 @@ function renderHome(){
       <div class="tile" id="tileRoutine"><div class="tile-emoji">💪</div><div class="tile-label">Ma routine</div></div>
       <div class="tile" id="tileCalendar"><div class="tile-emoji">📅</div><div class="tile-label">Calendrier</div></div>
       <div class="tile" id="tileLearning"><div class="tile-emoji">💻</div><div class="tile-label">Mon apprentissage</div></div>
+      <div class="tile" id="tileCandidatures"><div class="tile-emoji">📋</div><div class="tile-label">Candidatures</div></div>
     </div>
   `;
   app.appendChild(wrap);
   document.getElementById("tileRoutine").onclick = ()=>{ view="routine"; render(); };
   document.getElementById("tileCalendar").onclick = ()=>{ view="calendar"; render(); };
   document.getElementById("tileLearning").onclick = ()=>{ view="learning"; render(); };
+  document.getElementById("tileCandidatures").onclick = ()=>{ view="candidatures"; render(); };
 }
 
 // ================= CALENDAR =================
@@ -1295,12 +1347,166 @@ document.getElementById("lock-btn").addEventListener("click", tryUnlock);
 document.getElementById("lock-input").addEventListener("keydown", (e)=>{ if(e.key === "Enter") tryUnlock(); });
 updateLockUI();
 
+// ================= CANDIDATURES =================
+const CD_STATUSES = {
+  "a_envoyer": {label:"À envoyer", color:"#c7c7cf", bg:"#1a1a1e"},
+  "envoye": {label:"Envoyé", color:"#4a9eff", bg:"#0d1a2e"},
+  "relance": {label:"Relance à faire", color:"#ff9f4a", bg:"#2e1c0d"},
+  "entretien": {label:"Entretien prévu", color:"#c084fc", bg:"#1c0d2e"},
+  "accepte": {label:"Accepté", color:"#4ade80", bg:"#0d2e16"},
+  "refuse": {label:"Refusé", color:"#ff4d6d", bg:"#2e0d12"}
+};
+
+const CD_FILIERES = {
+  sisr: {label:"SISR", color:"#4ade80", bg:"#0d2e16"},
+  slam: {label:"SLAM", color:"#4a9eff", bg:"#0d1a2e"}
+};
+
+let candidatures = [];
+let candidatureFilter = "all";
+function saveCandidatures(){ storeSet("candidatures_list", candidatures); }
+
+function isOverdue(entry){
+  if(!entry.nextFollowUp) return false;
+  if(entry.status === "accepte" || entry.status === "refuse") return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(entry.nextFollowUp);
+  return d <= today;
+}
+
+function renderCandidatures(){
+  app.innerHTML = "";
+  app.appendChild(topbar("Candidatures", "home"));
+
+  const addBox = document.createElement("div");
+  addBox.className = "cd-add";
+  addBox.innerHTML = `
+    <input type="text" id="cd-company" placeholder="Nom de l'entreprise *"/>
+    <input type="text" id="cd-contact" placeholder="Contact (nom, email...)"/>
+    <input type="date" id="cd-date"/>
+    <select id="cd-status"></select>
+    <select id="cd-filiere">
+      <option value="sisr">SISR</option>
+      <option value="slam">SLAM</option>
+    </select>
+    <input type="date" id="cd-follow" title="Prochaine relance"/>
+    <textarea id="cd-notes" placeholder="Notes (poste, retour éventuel...)"></textarea>
+    <button class="cd-add-btn" id="cd-add-btn">+ Ajouter une candidature</button>
+  `;
+  app.appendChild(addBox);
+
+  const statusSelect = document.getElementById("cd-status");
+  Object.entries(CD_STATUSES).forEach(([key,val])=>{
+    const opt = document.createElement("option");
+    opt.value = key; opt.textContent = val.label;
+    statusSelect.appendChild(opt);
+  });
+  document.getElementById("cd-date").valueAsDate = new Date();
+
+  document.getElementById("cd-add-btn").onclick = ()=>{
+    const company = document.getElementById("cd-company").value.trim();
+    if(!company) return;
+    candidatures.push({
+      id: "cd"+Date.now()+Math.random().toString(36).slice(2,5),
+      company,
+      contact: document.getElementById("cd-contact").value.trim(),
+      dateApplied: document.getElementById("cd-date").value,
+      status: document.getElementById("cd-status").value,
+      filiere: document.getElementById("cd-filiere").value,
+      nextFollowUp: document.getElementById("cd-follow").value,
+      notes: document.getElementById("cd-notes").value.trim()
+    });
+    saveCandidatures();
+    renderCandidatures();
+  };
+
+  const filters = document.createElement("div");
+  filters.className = "cd-filters";
+  filters.innerHTML = `
+    <button class="cd-filter-btn ${candidatureFilter==='all' ? 'active-all':''}" id="cd-filter-all">Toutes</button>
+    <button class="cd-filter-btn ${candidatureFilter==='sisr' ? 'active-sisr':''}" id="cd-filter-sisr">SISR</button>
+    <button class="cd-filter-btn ${candidatureFilter==='slam' ? 'active-slam':''}" id="cd-filter-slam">SLAM</button>
+  `;
+  app.appendChild(filters);
+  document.getElementById("cd-filter-all").onclick = ()=>{ candidatureFilter="all"; renderCandidatures(); };
+  document.getElementById("cd-filter-sisr").onclick = ()=>{ candidatureFilter="sisr"; renderCandidatures(); };
+  document.getElementById("cd-filter-slam").onclick = ()=>{ candidatureFilter="slam"; renderCandidatures(); };
+
+  const list = document.createElement("div");
+  list.className = "cd-list";
+
+  const filtered = candidatureFilter === "all" ? candidatures : candidatures.filter(c=>c.filiere===candidatureFilter);
+  const sorted = [...filtered].sort((a,b)=>{
+    const aOver = isOverdue(a) ? 0 : 1;
+    const bOver = isOverdue(b) ? 0 : 1;
+    if(aOver !== bOver) return aOver - bOver;
+    return (a.nextFollowUp||"9999").localeCompare(b.nextFollowUp||"9999");
+  });
+
+  sorted.forEach(entry=>{
+    const overdue = isOverdue(entry);
+    const card = document.createElement("div");
+    card.className = "cd-card" + (overdue ? " overdue" : "");
+
+    const main = document.createElement("div");
+    main.className = "cd-main";
+    const fil = CD_FILIERES[entry.filiere] || CD_FILIERES.sisr;
+    main.innerHTML = `
+      <div class="cd-company">${entry.company}</div>
+      <span class="cd-filiere-badge" style="background:${fil.bg};color:${fil.color}">${fil.label}</span>
+      ${entry.contact ? `<div class="cd-contact">${entry.contact}</div>` : ""}
+      ${entry.notes ? `<div class="cd-notes">${entry.notes}</div>` : ""}
+    `;
+    card.appendChild(main);
+
+    const meta = document.createElement("div");
+    meta.className = "cd-meta";
+    const st = CD_STATUSES[entry.status] || CD_STATUSES.a_envoyer;
+    const statusBadge = document.createElement("select");
+    statusBadge.className = "cd-status";
+    statusBadge.style.background = st.bg;
+    statusBadge.style.color = st.color;
+    statusBadge.style.border = `1px solid ${st.color}55`;
+    Object.entries(CD_STATUSES).forEach(([key,val])=>{
+      const opt = document.createElement("option");
+      opt.value = key; opt.textContent = val.label;
+      if(key === entry.status) opt.selected = true;
+      statusBadge.appendChild(opt);
+    });
+    statusBadge.onchange = ()=>{ entry.status = statusBadge.value; saveCandidatures(); renderCandidatures(); };
+    meta.appendChild(statusBadge);
+
+    const dates = document.createElement("div");
+    dates.className = "cd-dates" + (overdue ? " overdue-text" : "");
+    let dateText = entry.dateApplied ? `Envoyé le ${new Date(entry.dateApplied).toLocaleDateString("fr-FR")}` : "";
+    if(entry.nextFollowUp){
+      dateText += `<br>${overdue ? "⚠️ Relance due" : "Relance"} le ${new Date(entry.nextFollowUp).toLocaleDateString("fr-FR")}`;
+    }
+    dates.innerHTML = dateText;
+    meta.appendChild(dates);
+
+    const del = document.createElement("button");
+    del.className = "cd-del"; del.textContent = "× supprimer";
+    del.onclick = ()=>{
+      candidatures = candidatures.filter(c=>c.id!==entry.id);
+      saveCandidatures(); renderCandidatures();
+    };
+    meta.appendChild(del);
+
+    card.appendChild(meta);
+    list.appendChild(card);
+  });
+
+  app.appendChild(list);
+}
+
 // ================= INIT =================
 async function startApp(){
   planningWeeks = await storeGet("planning_weeks", {});
   planningGoals = await storeGet("planning_goals", {});
   routineState = await storeGet("routine_state", { checks:{}, habits: JSON.parse(JSON.stringify(DEFAULT_HABITS)) });
   learningSections = await storeGet("learning_sections_v2", JSON.parse(JSON.stringify(DEFAULT_SECTIONS)));
+  candidatures = await storeGet("candidatures_list", []);
   loaded = true;
   render();
 }
